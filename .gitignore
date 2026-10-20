@@ -1,0 +1,22 @@
+# IntelliJ IDEA / IDE files
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.project
+.classpath
+
+# Compiled output
+out/
+build/
+bin/
+target/
+*.class
+*.jar
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
