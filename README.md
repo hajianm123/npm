@@ -53,6 +53,9 @@ Its memory stress case
 runs in a separate JVM with a 32 MiB heap and an eight-second timeout.
 The expanded audit tests use JDK 11 or newer. Run the suites above to review results.
 
+GitHub Actions runs all four suites on Ubuntu and Windows with JDK 11 and 25
+for pushes and pull requests. The workflow can also be started manually from Actions.
+
 `install-file` treats the remainder of the command as one path. Paths containing
 spaces work unquoted, in double quotes, or in single quotes; an empty quoted path
 or an unclosed opening quote produces an error. With no path, it uses `package.json`.
