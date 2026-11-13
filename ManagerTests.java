@@ -4,6 +4,7 @@ public final class ManagerTests {
     private static int failed;
 
     public static void main(String[] args) {
+        explicitRegistryCyclesAreRejected();
         diamondInstallAndFullRemove();
         sharedDependencySurvivesRemoval();
         dependencyCannotBeRemovedDirectly();
@@ -46,7 +47,32 @@ public final class ManagerTests {
     }
 
     private static PackageManager newManager() {
-        return new PackageManager(PackageRegistry.createDefault());
+        // Valid diamond fixture; default registry deliberately contains cycles.
+        PackageRegistry registry = PackageRegistry.createDefault();
+        registry.register("core");
+        return new PackageManager(registry);
+    }
+
+    private static void explicitRegistryCyclesAreRejected() {
+        PackageRegistry registry = PackageRegistry.createDefault();
+        // This test owns the cycle; production samples may legitimately change.
+        registry.register("core", "app");
+        PackageManager m = new PackageManager(registry);
+        run(() -> m.install("logger"));
+        String before = m.snapshot();
+        for (String name : new String[]{"app", "ui", "net", "core", "x", "y", "selfref"}) {
+            check("default cyclic package rejected: " + name, "true",
+                    String.valueOf(fails(() -> m.install(name))));
+            check("cycle rejection preserves counters and order: " + name, before, m.snapshot());
+            check("cyclic dry run rejected: " + name, "true",
+                    String.valueOf(fails(() -> m.planInstall(name))));
+            check("failed dry run preserves state: " + name, before, m.snapshot());
+        }
+        check("default cycle path is explained", "true", String.valueOf(
+                messageOf(() -> m.install("app")).contains("app -> ui -> core -> app")));
+        check("batch containing default cycle rejected", "true", String.valueOf(
+                fails(() -> m.installAll(queueOf("utils", "app")))));
+        check("batch validation preserves pre-existing state", before, m.snapshot());
     }
 
     private static void diamondInstallAndFullRemove() {
@@ -131,7 +157,7 @@ public final class ManagerTests {
         run(() -> m.install("logger"));
         String before = m.snapshot();
         check("cycle found late: command fails", "true", String.valueOf(fails(() -> m.install("top"))));
-        check("cycle found late: earlier changes (utils counter) rolled back", before, m.snapshot());
+        check("preflight cycle rejection preserves utils counter", before, m.snapshot());
     }
 
     private static void unknownAndMissingPackages() {
@@ -383,7 +409,7 @@ public final class ManagerTests {
         PackageManager fresh = newManager();
         check("manifest with an unknown package fails", "true",
                 String.valueOf(fails(() -> fresh.installAll(queueOf("ui", "ghost")))));
-        check("...and 'ui' (installed before the failure) was rolled back too", "", fresh.snapshot());
+        check("preflight rejects the batch before installing ui", "", fresh.snapshot());
 
         PackageManager busy = newManager();
         run(() -> busy.install("logger"));

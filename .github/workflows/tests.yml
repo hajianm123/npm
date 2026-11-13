@@ -1,0 +1,49 @@
+name: Java tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Tests (${{ matrix.os }}, Java ${{ matrix.java }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        java: ['11', '25']
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@77dd5b2ce225ea11469928ac317850245a74ae78 # v6.2.0
+        with:
+          distribution: temurin
+          java-version: ${{ matrix.java }}
+
+      - name: Compile
+        run: javac -encoding UTF-8 -d out *.java
+
+      - name: Manager tests
+        run: java -cp out ManagerTests
+
+      - name: Algorithm and CLI tests
+        run: java -cp out AlgorithmTests
+
+      - name: JSON manifest tests
+        run: java -cp out ManifestTests
+
+      - name: CLI audit regressions and memory stress test
+        run: java -cp out AuditRegressionTests
