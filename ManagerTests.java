@@ -4,7 +4,7 @@ public final class ManagerTests {
     private static int failed;
 
     public static void main(String[] args) {
-        defaultRegistryCyclesAreRejected();
+        explicitRegistryCyclesAreRejected();
         diamondInstallAndFullRemove();
         sharedDependencySurvivesRemoval();
         dependencyCannotBeRemovedDirectly();
@@ -53,8 +53,11 @@ public final class ManagerTests {
         return new PackageManager(registry);
     }
 
-    private static void defaultRegistryCyclesAreRejected() {
-        PackageManager m = new PackageManager(PackageRegistry.createDefault());
+    private static void explicitRegistryCyclesAreRejected() {
+        PackageRegistry registry = PackageRegistry.createDefault();
+        // This test owns the cycle; production samples may legitimately change.
+        registry.register("core", "app");
+        PackageManager m = new PackageManager(registry);
         run(() -> m.install("logger"));
         String before = m.snapshot();
         for (String name : new String[]{"app", "ui", "net", "core", "x", "y", "selfref"}) {

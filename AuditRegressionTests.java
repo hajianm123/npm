@@ -118,11 +118,18 @@ public final class AuditRegressionTests {
         return Paths.get(System.getProperty("java.home"), "bin", executable).toString();
     }
     static String cli(String input) throws Exception {
+        return cli(input, null);
+    }
+    static String cli(String input, Path directory) throws Exception {
         Path output = Files.createTempFile("mini-npm-cli-", ".log");
         Process child = null;
         try {
-            child = new ProcessBuilder(javaExe(), "-cp", System.getProperty("java.class.path"), "Main")
-                    .redirectErrorStream(true).redirectOutput(output.toFile()).start();
+            String[] entries = System.getProperty("java.class.path").split(java.util.regex.Pattern.quote(File.pathSeparator));
+            for (int i = 0; i < entries.length; i++) entries[i] = Paths.get(entries[i]).toAbsolutePath().toString();
+            ProcessBuilder builder = new ProcessBuilder(javaExe(), "-cp", String.join(File.pathSeparator, entries), "Main")
+                    .redirectErrorStream(true).redirectOutput(output.toFile());
+            if (directory != null) builder.directory(directory.toFile());
+            child = builder.start();
             try (OutputStream stream = child.getOutputStream()) { stream.write(input.getBytes(StandardCharsets.UTF_8)); }
             if (!child.waitFor(8, TimeUnit.SECONDS)) throw new AssertionError("CLI timeout");
             if (child.exitValue() != 0) throw new AssertionError("CLI exit=" + child.exitValue() + " " + Files.readString(output));

@@ -39,7 +39,7 @@ java -cp out ManifestTests
 java -cp out AuditRegressionTests
 ```
 
-`ManagerTests` asserts that the default cyclic samples fail. Successful diamond
+`ManagerTests` asserts that explicitly cyclic test fixtures fail. Successful diamond
 scenarios use an explicitly acyclic test registry; the production registry is
 unchanged. `AlgorithmTests` checks graphs and randomized command sequences
 against an independent reference model, plus structures, parser robustness and

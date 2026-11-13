@@ -322,8 +322,16 @@ public final class AlgorithmTests {
         eq(true, manifestOutput.contains("Installed 2 package(s) from the manifest (2 new package(s) added)"), "CLI manifest success");
         eq(true, manifestOutput.contains("Installed packages (1)"), "CLI manifest independent roots");
         eq(true, manifestOutput.contains("utils (ref_count = 1)"), "CLI direct dependency survives removal");
-        String defaultManifest = AuditRegressionTests.cli("install-file\nlist\nexit\n");
-        eq(true, defaultManifest.contains("Circular dependency detected"), "default sample manifest deliberately cyclic");
-        eq(true, defaultManifest.contains("No packages are installed"), "default manifest failure atomicity");
+        java.nio.file.Path directory = java.nio.file.Files.createTempDirectory("mini-npm-default-manifest-");
+        java.nio.file.Path file = directory.resolve("package.json");
+        try {
+            java.nio.file.Files.writeString(file, "{\"dependencies\":[\"logger\",\"utils\"]}");
+            String defaultManifest = AuditRegressionTests.cli("install-file\nlist\nexit\n", directory);
+            eq(true, defaultManifest.contains("Installed 2 package(s) from the manifest (2 new package(s) added)"), "default manifest path");
+            eq(true, defaultManifest.contains("utils (ref_count = 2)"), "default manifest installed references");
+        } finally {
+            java.nio.file.Files.deleteIfExists(file);
+            java.nio.file.Files.deleteIfExists(directory);
+        }
     }
 }
