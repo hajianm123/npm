@@ -2,9 +2,11 @@ public final class PackageManager {
 
     private final PackageRegistry registry;
     private final InstalledPackageList installed = new InstalledPackageList();
+    private final WhyExplainer whyExplainer;
 
     public PackageManager(PackageRegistry registry) {
         this.registry = registry;
+        this.whyExplainer = new WhyExplainer(registry, installed);
     }
 
     public int install(String packageName) throws PackageManagerException {
@@ -14,6 +16,60 @@ public final class PackageManager {
         } catch (PackageManagerException | RuntimeException failure) {
             throw abort(failure, undoStack);
         }
+    }
+
+    /**
+     * Installs several packages as ONE command (used by the manifest install): all of them or none.
+     * The queue is consumed: names are installed in the order they were enqueued.
+     */
+    public int installAll(LinkedQueue<String> packageNames) throws PackageManagerException {
+        LinkedStack<UndoRecord> undoStack = new LinkedStack<>();
+        try {
+            int sizeBefore = installed.size();
+            while (!packageNames.isEmpty()) {
+                performInstall(packageNames.dequeue(), undoStack);
+            }
+            return installed.size() - sizeBefore;
+        } catch (PackageManagerException | RuntimeException failure) {
+            throw abort(failure, undoStack);
+        }
+    }
+
+    /**
+     * {@code install --dry-run}: finds out what an install would do, then takes it all back.
+     * It reuses the undo stack: popping gives the newest change first (that is what undo needs),
+     * and pushing every popped record onto a second stack turns it back into install order.
+     */
+    public InstallPlan planInstall(String packageName) throws PackageManagerException {
+        LinkedStack<UndoRecord> undoStack = new LinkedStack<>();
+        try {
+            performInstall(packageName, undoStack);
+        } catch (PackageManagerException | RuntimeException failure) {
+            throw abort(failure, undoStack);
+        }
+        LinkedStack<UndoRecord> inInstallOrder = new LinkedStack<>();
+        while (!undoStack.isEmpty()) {
+            UndoRecord record = undoStack.pop();
+            undo(record);
+            inInstallOrder.push(record);
+        }
+        LinkedQueue<String> added = new LinkedQueue<>();
+        LinkedQueue<String> referenced = new LinkedQueue<>();
+        while (!inInstallOrder.isEmpty()) {
+            UndoRecord record = inInstallOrder.pop();
+            if (record.getAction() == UndoRecord.Action.NODE_ADDED) {
+                added.enqueue(record.getPackageName());
+            } else if (record.getAction() == UndoRecord.Action.REF_INCREMENTED) {
+                referenced.enqueue(record.getPackageName());
+            }
+        }
+        return new InstallPlan(packageName, Queues.drainToArray(added), Queues.drainToArray(referenced));
+    }
+
+    /** {@code why}: every chain from a directly installed package down to {@code packageName}. */
+    public String[] explainWhy(String packageName) throws PackageManagerException {
+        requireValidName(packageName);
+        return whyExplainer.explain(packageName);
     }
 
     private int performInstall(String packageName, LinkedStack<UndoRecord> undoStack)
