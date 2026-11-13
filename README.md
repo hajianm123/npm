@@ -34,10 +34,44 @@ The test suite is a plain `main` as well, so no test framework is needed:
 
 ```bash
 java -cp out ManagerTests
+java -cp out AlgorithmTests
+java -cp out ManifestTests
+java -cp out AuditRegressionTests
+```
+
+`ManagerTests` asserts that the default cyclic samples fail. Successful diamond
+scenarios use an explicitly acyclic test registry; the production registry is
+unchanged. `AlgorithmTests` checks graphs and randomized command sequences
+against an independent reference model, plus structures, parser robustness and
+CLI integration. `ManifestTests` covers complete JSON syntax, Unicode and escape
+decoding, generated values, 10,000 nested containers, and CLI atomicity.
+`AuditRegressionTests` asserts desired behavior for audit findings within the
+agreed CLI scope. The registry-mutation API scenario is excluded by default and
+can be reproduced with `java -cp out AuditRegressionTests --include-api-mutation`;
+it remains an API limitation and that optional run currently exits with status 1.
+Its memory stress case
+runs in a separate JVM with a 32 MiB heap and an eight-second timeout.
+The expanded audit tests use JDK 11 or newer. Run the suites above to review results.
+
+`install-file` treats the remainder of the command as one path. Paths containing
+spaces work unquoted, in double quotes, or in single quotes; an empty quoted path
+or an unclosed opening quote produces an error. With no path, it uses `package.json`.
+
+```text
+install-file "C:\my project\package.json"
+install-file C:\my project\package.json
 ```
 
 ## How it works
 
+- Preflight validation uses an array of three states (unseen, visiting, validated)
+  and the existing `LinkedStack` for iterative depth-first search. An edge to a
+  visiting package is a cycle; a validated package is skipped. Each reachable
+  package's dependencies are expanded once per command, including shared roots
+  in a manifest install. This avoids exponential path enumeration and recursive
+  call-stack limits without introducing maps or sets into production code.
+  Registry name lookup still scans an array, so overall validation is polynomial,
+  rather than claiming linear time for the whole operation.
 - `PackageRegistry` — array-backed table of name → dependency names.
 - `PackageManager` — installs and removes packages. `install` walks the
   dependency graph breadth-first with a `LinkedQueue`, `remove` releases
@@ -51,7 +85,7 @@ java -cp out ManagerTests
 - `PackageManagerException` — a failed command is all-or-nothing.
 - `InstallPlan` — the result of a dry run.
 - `WhyExplainer` — builds the chains printed by `why`.
-- `ManifestParser` — bracket check (stack) and dependency names (queue) for manifests.
+- `ManifestParser` — full JSON validation with a linked stack and dependency names in a linked queue.
 
 ### Bonus features
 
@@ -89,13 +123,18 @@ mini-npm> why core
 `{"name": "my-app", "dependencies": ["ui", "logger"]}` (the npm style
 `"dependencies": {"ui": "1.0.0"}` works too, only the names are used). It is read in two steps:
 first a `LinkedStack` checks that every `{` and `[` is closed by the matching bracket in the right
-order (brackets inside quotes are ignored) and reports the position of the first problem; then the
-names are put in a `LinkedQueue` and installed in file order. The whole manifest is one command: if
-any package fails, everything it installed is rolled back.
+order (brackets inside quotes are ignored); then an iterative parser validates the
+entire JSON grammar, including unrelated properties and trailing input. Syntax
+errors include their position. JSON string escapes and Unicode escapes are decoded.
+The root must be one object; only its top-level `dependencies` is used, and a
+duplicate top-level `dependencies` key is rejected as ambiguous. Dependency arrays
+contain strings and dependency objects map names to string versions. No installation
+starts until the entire manifest is valid. Names are collected in a `LinkedQueue`
+and installed in file order. If any package fails, the whole install is rolled back.
 
 ```
-mini-npm> install-json {"dependencies":["ui","logger"]}
-Installed 2 package(s) from the manifest (4 new package(s) added).
+mini-npm> install-json {"dependencies":["logger","utils"]}
+Installed 2 package(s) from the manifest (2 new package(s) added).
 mini-npm> install-json {"dependencies":["ui","logger"
 Error: Manifest error: '[' opened at position 17 is never closed.
 ```

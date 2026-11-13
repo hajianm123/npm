@@ -53,7 +53,7 @@ public final class Main {
         } else if (command.equalsIgnoreCase("install-json")) {
             handleInstallJson(line);
         } else if (command.equalsIgnoreCase("install-file")) {
-            handleInstallFile(tokens);
+            handleInstallFile(line);
         } else if (command.equalsIgnoreCase("history")) {
             handleHistory(tokens);
         } else if (command.equalsIgnoreCase("help")) {
@@ -148,12 +148,22 @@ public final class Main {
         installFromManifest(text, "install-json " + text);
     }
 
-    private void handleInstallFile(String[] tokens) {
-        if (tokens.length > 2) {
+    private void handleInstallFile(String line) {
+        String path = restOfLine(line);
+        if (path.isEmpty()) {
+            path = "package.json";
+        } else if (path.charAt(0) == '"' || path.charAt(0) == '\'') {
+            char quote = path.charAt(0);
+            if (path.length() < 2 || path.charAt(path.length() - 1) != quote) {
+                System.out.println("Error: the file path has an unclosed quote.");
+                return;
+            }
+            path = path.substring(1, path.length() - 1);
+        }
+        if (path.isEmpty()) {
             System.out.println("Usage: install-file [path]   (default path: package.json)");
             return;
         }
-        String path = tokens.length == 2 ? tokens[1] : "package.json";
         String text;
         try {
             text = new String(Files.readAllBytes(Paths.get(path)), StandardCharsets.UTF_8);

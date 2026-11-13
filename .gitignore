@@ -16,6 +16,10 @@ target/
 *.class
 *.jar
 
+# Markdown documentation (keep README.md)
+*.[mM][dD]
+!README.md
+
 # OS noise
 .DS_Store
 Thumbs.db

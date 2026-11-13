@@ -1,5 +1,21 @@
 public final class PackageManager {
 
+    private static final byte VISITING = 1;
+    private static final byte VALIDATED = 2;
+
+    private static final class ValidationFrame {
+        private final int packageIndex;
+        private final DependencyRequest request;
+        private final String[] dependencies;
+        private int nextDependency;
+
+        private ValidationFrame(int packageIndex, DependencyRequest request, String[] dependencies) {
+            this.packageIndex = packageIndex;
+            this.request = request;
+            this.dependencies = dependencies;
+        }
+    }
+
     private final PackageRegistry registry;
     private final InstalledPackageList installed = new InstalledPackageList();
     private final WhyExplainer whyExplainer;
@@ -24,10 +40,14 @@ public final class PackageManager {
      * The queue is consumed: names are installed in the order they were enqueued.
      */
     public int installAll(LinkedQueue<String> packageNames) throws PackageManagerException {
+        if (packageNames == null) {
+            throw new PackageManagerException("Package list must not be null. No changes were made.");
+        }
         LinkedQueue<String> validated = new LinkedQueue<>();
+        byte[] validationState = new byte[registry.size()];
         while (!packageNames.isEmpty()) {
             String packageName = packageNames.dequeue();
-            validateInstall(packageName);
+            validateInstall(packageName, validationState);
             validated.enqueue(packageName);
         }
         while (!validated.isEmpty()) {
@@ -52,6 +72,7 @@ public final class PackageManager {
      * and pushing every popped record onto a second stack turns it back into install order.
      */
     public InstallPlan planInstall(String packageName) throws PackageManagerException {
+        validateInstall(packageName);
         LinkedStack<UndoRecord> undoStack = new LinkedStack<>();
         try {
             performInstall(packageName, undoStack);
@@ -84,26 +105,43 @@ public final class PackageManager {
     }
 
     private void validateInstall(String packageName) throws PackageManagerException {
+        validateInstall(packageName, new byte[registry.size()]);
+    }
+
+    /** Iterative three-color DFS: each reachable node is expanded once per command. */
+    private void validateInstall(String packageName, byte[] state) throws PackageManagerException {
         requireValidName(packageName);
-        LinkedQueue<DependencyRequest> pending = new LinkedQueue<>();
-        pending.enqueue(new DependencyRequest(packageName, null));
+        LinkedStack<ValidationFrame> pending = new LinkedStack<>();
+        pushValidation(new DependencyRequest(packageName, null), state, pending);
 
         while (!pending.isEmpty()) {
-            DependencyRequest request = pending.dequeue();
-            if (request.isPartOfCycle()) {
-                throw new PackageManagerException("Circular dependency detected: " + request.describeChain() + ".");
-            }
-
-            String name = request.getPackageName();
-            String[] dependencies = registry.findDependencies(name);
-            if (dependencies == null) {
-                throw new PackageManagerException("Package '" + name + "' was not found in the registry.");
-            }
-
-            for (String dependency : dependencies) {
-                pending.enqueue(new DependencyRequest(dependency, request));
+            ValidationFrame frame = pending.pop();
+            if (frame.nextDependency == frame.dependencies.length) {
+                state[frame.packageIndex] = VALIDATED;
+            } else {
+                String dependency = frame.dependencies[frame.nextDependency++];
+                // Resume the parent only after this child has finished (no recursion).
+                pending.push(frame);
+                pushValidation(new DependencyRequest(dependency, frame.request), state, pending);
             }
         }
+    }
+
+    private void pushValidation(DependencyRequest request, byte[] state,
+                                LinkedStack<ValidationFrame> pending) throws PackageManagerException {
+        String name = request.getPackageName();
+        int index = registry.indexOf(name);
+        if (index < 0) {
+            throw new PackageManagerException("Package '" + name + "' was not found in the registry.");
+        }
+        if (state[index] == VISITING) {
+            throw new PackageManagerException("Circular dependency detected: " + request.describeChain() + ".");
+        }
+        if (state[index] == VALIDATED) {
+            return;
+        }
+        state[index] = VISITING;
+        pending.push(new ValidationFrame(index, request, registry.findDependencies(name)));
     }
 
     private int performInstall(String packageName, LinkedStack<UndoRecord> undoStack)

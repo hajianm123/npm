@@ -20,7 +20,8 @@ public final class PackageRegistry {
         registry.register("app", "ui", "net");
         registry.register("ui", "core", "utils");
         registry.register("net", "core");
-        registry.register("core","app");
+        registry.register("core","z");
+        registry.register("z");
         registry.register("utils");
         registry.register("logger", "utils");
         registry.register("x", "y");
@@ -48,13 +49,23 @@ public final class PackageRegistry {
         return entry == null ? null : entry.dependencies.clone();
     }
 
-    private Entry findEntry(String name) {
+    // Stable array positions let validation keep per-package state without a map.
+    int size() {
+        return count;
+    }
+
+    int indexOf(String name) {
         for (int i = 0; i < count; i++) {
             if (entries[i].name.equals(name)) {
-                return entries[i];
+                return i;
             }
         }
-        return null;
+        return -1;
+    }
+
+    private Entry findEntry(String name) {
+        int index = indexOf(name);
+        return index < 0 ? null : entries[index];
     }
 
     private void growIfFull() {
