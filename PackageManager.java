@@ -10,6 +10,7 @@ public final class PackageManager {
     }
 
     public int install(String packageName) throws PackageManagerException {
+        validateInstall(packageName);
         LinkedStack<UndoRecord> undoStack = new LinkedStack<>();
         try {
             return performInstall(packageName, undoStack);
@@ -23,6 +24,16 @@ public final class PackageManager {
      * The queue is consumed: names are installed in the order they were enqueued.
      */
     public int installAll(LinkedQueue<String> packageNames) throws PackageManagerException {
+        LinkedQueue<String> validated = new LinkedQueue<>();
+        while (!packageNames.isEmpty()) {
+            String packageName = packageNames.dequeue();
+            validateInstall(packageName);
+            validated.enqueue(packageName);
+        }
+        while (!validated.isEmpty()) {
+            packageNames.enqueue(validated.dequeue());
+        }
+
         LinkedStack<UndoRecord> undoStack = new LinkedStack<>();
         try {
             int sizeBefore = installed.size();
@@ -70,6 +81,29 @@ public final class PackageManager {
     public String[] explainWhy(String packageName) throws PackageManagerException {
         requireValidName(packageName);
         return whyExplainer.explain(packageName);
+    }
+
+    private void validateInstall(String packageName) throws PackageManagerException {
+        requireValidName(packageName);
+        LinkedQueue<DependencyRequest> pending = new LinkedQueue<>();
+        pending.enqueue(new DependencyRequest(packageName, null));
+
+        while (!pending.isEmpty()) {
+            DependencyRequest request = pending.dequeue();
+            if (request.isPartOfCycle()) {
+                throw new PackageManagerException("Circular dependency detected: " + request.describeChain() + ".");
+            }
+
+            String name = request.getPackageName();
+            String[] dependencies = registry.findDependencies(name);
+            if (dependencies == null) {
+                throw new PackageManagerException("Package '" + name + "' was not found in the registry.");
+            }
+
+            for (String dependency : dependencies) {
+                pending.enqueue(new DependencyRequest(dependency, request));
+            }
+        }
     }
 
     private int performInstall(String packageName, LinkedStack<UndoRecord> undoStack)
